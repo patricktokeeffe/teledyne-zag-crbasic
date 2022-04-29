@@ -12,8 +12,8 @@ Include("CPU:zag_details.CR1")
 Const ZAG_BUFFER = 64
 
 'Specify program timing
-Const SCAN_INTV = 10 'seconds, how frequently to query sensors
-Const DATA_INTV = 60 'seconds, frequency of data table records
+Const SCAN_INTV = 5 'seconds, how frequently to query sensors
+Const DATA_INTV = 5 'seconds, frequency of data table records
 
 'Thermocouple input
 'DF channels 1..4
@@ -131,16 +131,21 @@ DisplayMenu("Teledyne ZAG",-2)
 EndMenu
 
 BeginProg
-  tcphandle = TCPOpen(ZAG_IPADDR,ZAG_IPPORT,ZAG_BUFFER)
 	Scan (SCAN_INTV,Sec,0,0)
 
   PanelTemp(panel_tmpr,_60Hz)
   TCDiff(tcdata,4,mV25,1,TC_TYPE,panel_tmpr,1,0,_60Hz,1,0)
   PortGet(fan_state,1)
 
+  tcphandle = TCPOpen(ZAG_IPADDR,ZAG_IPPORT,ZAG_BUFFER)
   ModbusMaster(modbus_comm_err,tcphandle,57600,ZAG_MBADDR,1,mb_coil_reg(1),1,5,1,100)
   ModbusMaster(modbus_comm_err,tcphandle,57600,ZAG_MBADDR,2,mb_d_input(1),1,7,1,100)
   ModbusMaster(modbus_comm_err,tcphandle,57600,ZAG_MBADDR,4,mb_input_reg(1),1,8,1,100,2) 'BIG endian
+  If (modbus_comm_err) Then
+    Move(mb_coil_reg(1),5,NAN,1)
+    Move(mb_d_input(1),7,NAN,1)
+    Move(mb_input_reg(1),8,NAN,1)
+  EndIf
 
   CallTable(tapi_zag)
 	NextScan
