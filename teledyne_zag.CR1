@@ -1,0 +1,56 @@
+'Teledyne ZAG box temperature recorder
+'Patrick O'Keeffe <pokeeffe@wsu.edu>
+'WSU LAR (C) 2022
+
+'Specify thermocouple type
+'Valid options = {TypeT, TypeE, TypeK, TypeJ, TypeB, TypeR, TypeS, TypeN}
+Const TC_TYPE = TypeT
+
+'Specify program timing
+Const SCAN_INTV = 1 'seconds, how frequently to query sensors
+Const DATA_INTV = 60 'seconds, frequency of data table records
+
+'Thermocouple input
+'DF channels 1..4
+Public panel_tmpr
+Public tcdata(4)
+Alias tcdata(1) = TC1_tmpr  'bottom temp
+Alias tcdata(2) = TC2_tmpr  'middle temp
+Alias tcdata(3) = TC3_tmpr
+Alias tcdata(4) = TC4_tmpr  'air temp
+Units panel_tmpr = degC
+Units tcdata = degC
+
+'Fan switch
+'C1 & 5V
+Public fan_state
+
+
+DataTable(tapi_zag,True,-1)
+  DataInterval(0,DATA_INTV,Sec,5)
+  Average(1,TC1_tmpr,IEEE4,TC1_tmpr=NAN)
+  Average(1,TC2_tmpr,IEEE4,TC2_tmpr=NAN)
+  Average(1,TC3_tmpr,IEEE4,TC3_tmpr=NAN)
+  Average(1,TC4_tmpr,IEEE4,TC4_tmpr=NAN)
+  Average(1,fan_state,IEEE4,fan_state=NAN)
+ EndTable
+ 
+DisplayMenu("Teledyne ZAG",-2)
+  DisplayValue("Ctrl brd", TC1_tmpr)
+  DisplayValue("Pump", TC2_tmpr)
+  DisplayValue("Molycon", TC3_tmpr)
+  DisplayValue("Ambient", TC4_tmpr)
+  DisplayValue("Logger", panel_tmpr)
+  DisplayValue("Fan state", fan_state)
+EndMenu
+
+BeginProg
+	Scan (SCAN_INTV,Sec,0,0)
+
+  PanelTemp(panel_tmpr,_60Hz)
+  TCDiff(tcdata,4,mV25,1,TC_TYPE,panel_tmpr,1,0,_60Hz,1,0)
+  PortGet(fan_state,1)
+
+  CallTable(tapi_zag)
+	NextScan
+EndProg
