@@ -1,4 +1,4 @@
-'Teledyne ZAG box temperature recorder
+'Teledyne T701H zero air generator troubleshooting
 'Patrick O'Keeffe <pokeeffe@wsu.edu>
 'WSU LAR (C) 2022
 
@@ -6,24 +6,67 @@
 'Valid options = {TypeT, TypeE, TypeK, TypeJ, TypeB, TypeR, TypeS, TypeN}
 Const TC_TYPE = TypeT
 
+'Specify zero air generator details in separate include file
+'HINT: so they are not committed into public repos
+Include("CPU:zag_details.CR1")
+Const ZAG_BUFFER = 64
+
 'Specify program timing
-Const SCAN_INTV = 1 'seconds, how frequently to query sensors
+Const SCAN_INTV = 10 'seconds, how frequently to query sensors
 Const DATA_INTV = 60 'seconds, frequency of data table records
 
 'Thermocouple input
 'DF channels 1..4
 Public panel_tmpr
 Public tcdata(4)
-Alias tcdata(1) = TC1_tmpr  'bottom temp
-Alias tcdata(2) = TC2_tmpr  'middle temp
-Alias tcdata(3) = TC3_tmpr
-Alias tcdata(4) = TC4_tmpr  'air temp
+Alias tcdata(1) = TC1_tmpr  'mounting plate for control board
+Alias tcdata(2) = TC2_tmpr  'pump motor body
+Alias tcdata(3) = TC3_tmpr  'exterior housing of HC scrubber
+Alias tcdata(4) = TC4_tmpr  'ambient air
 Units panel_tmpr = degC
 Units tcdata = degC
 
 'Fan switch
 'C1 & 5V
 Public fan_state
+
+'ZAG MODBUS registers, see user manual sect 5.4
+Dim tcphandle
+Public modbus_comm_err  'result code, 0 = good
+
+Public mb_coil_reg(5) As Boolean
+Alias mb_coil_reg(1) = system_reset_warning
+Alias mb_coil_reg(2) = remote_pump_disable
+Alias mb_coil_reg(3) = pump_timer_reset
+Alias mb_coil_reg(4) = latch_system_reset
+Alias mb_coil_reg(5) = cpu_restart
+
+Public mb_d_input(7) As Boolean
+Alias mb_d_input(1) = pump_service_warning
+Alias mb_d_input(2) = dewpoint_warning
+Alias mb_d_input(3) = scrubber_temp_warning
+Alias mb_d_input(4) = low_pressure_warning
+Alias mb_d_input(5) = dewpoint_shutdown_warning
+Alias mb_d_input(6) = box_temp_shutdown_warning
+Alias mb_d_input(7) = maintenance_mode_warning
+
+Public mb_input_reg(8) As Float
+Alias mb_input_reg(1)  = tank_press
+Alias mb_input_reg(2)  = output_press
+Alias mb_input_reg(3)  = scrubber_temp
+Alias mb_input_reg(4)  = box_temp
+Alias mb_input_reg(5)  = pump_duty_cycle
+Alias mb_input_reg(6)  = heater_duty_cycle
+Alias mb_input_reg(7)  = pump_service_timer
+Alias mb_input_reg(8)  = mv_ref_voltage
+Units tank_press = psi
+Units output_press = psi
+Units scrubber_temp = degC
+Units box_temp = degC
+Units pump_duty_cycle = fraction
+Units heater_duty_cycle = fraction
+Units pump_service_timer = hours
+Units mv_ref_voltage = mV
 
 
 DataTable(tapi_zag,True,-1)
@@ -33,6 +76,29 @@ DataTable(tapi_zag,True,-1)
   Average(1,TC3_tmpr,IEEE4,TC3_tmpr=NAN)
   Average(1,TC4_tmpr,IEEE4,TC4_tmpr=NAN)
   Average(1,fan_state,IEEE4,fan_state=NAN)
+  
+  Average(1,system_reset_warning,IEEE4,system_reset_warning=NAN)
+  Average(1,remote_pump_disable,IEEE4,remote_pump_disable=NAN)
+  Average(1,pump_timer_reset,IEEE4,pump_timer_reset=NAN)
+  Average(1,latch_system_reset,IEEE4,latch_system_reset=NAN)
+  Average(1,cpu_restart,IEEE4,cpu_restart=NAN)
+  
+  Average(1,pump_service_warning,IEEE4,pump_service_warning=NAN)
+  Average(1,dewpoint_warning,IEEE4,dewpoint_warning=NAN)
+  Average(1,scrubber_temp_warning,IEEE4,scrubber_temp_warning=NAN)
+  Average(1,low_pressure_warning,IEEE4,low_pressure_warning=NAN)
+  Average(1,dewpoint_shutdown_warning,IEEE4,dewpoint_shutdown_warning=NAN)
+  Average(1,box_temp_shutdown_warning,IEEE4,box_temp_shutdown_warning=NAN)
+  Average(1,maintenance_mode_warning,IEEE4,maintenance_mode_warning=NAN)
+  
+  Average(1,tank_press,IEEE4,tank_press=NAN)
+  Average(1,output_press,IEEE4,output_press=NAN)
+  Average(1,scrubber_temp,IEEE4,scrubber_temp=NAN)
+  Average(1,box_temp,IEEE4,box_temp=NAN)
+  Average(1,pump_duty_cycle,IEEE4,pump_duty_cycle=NAN)
+  Average(1,heater_duty_cycle,IEEE4,heater_duty_cycle=NAN)
+  Average(1,pump_service_timer,IEEE4,pump_service_timer=NAN)
+  Average(1,mv_ref_voltage,IEEE4,mv_ref_voltage=NAN)
  EndTable
  
 DisplayMenu("Teledyne ZAG",-2)
@@ -42,14 +108,39 @@ DisplayMenu("Teledyne ZAG",-2)
   DisplayValue("Ambient", TC4_tmpr)
   DisplayValue("Logger", panel_tmpr)
   DisplayValue("Fan state", fan_state)
+  DisplayValue("System Reset Warning", system_reset_warning)
+  DisplayValue("Remote Pump Disable", remote_pump_disable)
+  DisplayValue("Pump Service Timer Reset", pump_timer_reset)
+  DisplayValue("Latch System Reset Warning", latch_system_reset)
+  DisplayValue("CPU Restart", cpu_restart))
+  DisplayValue("Pump Service Warning", pump_service_warning)
+  DisplayValue("Dewpoint Warning", dewpoint_warning)
+  DisplayValue("HC Scrubber Temp Warning", scrubber_temp_warning)
+  DisplayValue("Low Output Pressure Warning", low_pressure_warning)
+  DisplayValue("Dewpoint Shut Down Warning", dewpoint_shutdown_warning)
+  DisplayValue("Box Temp Shut Down Warning", box_temp_shutdown_warning)
+  DisplayValue("Maintenance Mode Warning", maintenance_mode_warning)
+  DisplayValue("Tank Pressure", tank_press)
+  DisplayValue("Output Pressure", output_press)
+  DisplayValue("HC Scrubber Temp", scrubber_temp)
+  DisplayValue("Box Temp", box_temp)
+  DisplayValue("Pump Duty Cycle", pump_duty_cycle)
+  DisplayValue("HC Heater Duty Cycle", heater_duty_cycle)
+  DisplayValue("Pump Service Interval Remaining Timer", pump_service_timer)
+  DisplayValue("4096 mV Reference Voltage", mv_ref_voltage)
 EndMenu
 
 BeginProg
+  tcphandle = TCPOpen(ZAG_IPADDR,ZAG_IPPORT,ZAG_BUFFER)
 	Scan (SCAN_INTV,Sec,0,0)
 
   PanelTemp(panel_tmpr,_60Hz)
   TCDiff(tcdata,4,mV25,1,TC_TYPE,panel_tmpr,1,0,_60Hz,1,0)
   PortGet(fan_state,1)
+
+  ModbusMaster(modbus_comm_err,tcphandle,57600,ZAG_MBADDR,1,mb_coil_reg(1),1,5,1,100)
+  ModbusMaster(modbus_comm_err,tcphandle,57600,ZAG_MBADDR,2,mb_d_input(1),1,7,1,100)
+  ModbusMaster(modbus_comm_err,tcphandle,57600,ZAG_MBADDR,4,mb_input_reg(1),1,8,1,100,2) 'BIG endian
 
   CallTable(tapi_zag)
 	NextScan

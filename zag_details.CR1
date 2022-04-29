@@ -1,0 +1,6 @@
+'Update with details for target zero air generator
+
+Const ZAG_MBADDR = 1  'MODBUS device address (default: 1)
+Const ZAG_IPADDR = "192.168.1.1"
+Const ZAG_IPPORT = 502
+
